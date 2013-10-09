@@ -1,0 +1,591 @@
+//You can include any C libraries that you normally use
+#include "mex.h"
+#include "lapack.h"
+#include <math.h>
+#include <vector>
+#include <stdio.h>
+#include <string.h>
+#include <iostream>
+#include <time.h>
+#include <stdlib.h>
+#include "boost/multi_array.hpp"
+#include <boost/numeric/ublas/vector.hpp>
+#include <boost/numeric/ublas/matrix.hpp>
+#include <boost/numeric/ublas/matrix_proxy.hpp>
+#include <boost/numeric/ublas/io.hpp>
+#define PI 3.14159265358979323846
+
+// using namespace std;
+// typedef boost::multi_array<double, 3> matrix<double>;
+// typedef boost::multi_array<double, 2> matrix<double>;
+// typedef std::vector<double> vector<double>;
+
+using namespace boost::numeric::ublas;
+typedef boost::numeric::ublas::matrix<double> matrix_type;
+typedef boost::numeric::ublas::vector<double> vector_type;
+typedef boost::numeric::ublas::vector<matrix_type> mat_vec_type;
+
+void printMyMat(matrix_type &A,int sizeI,int sizeJ, const char* name)
+{
+    for (int i = 0; i < sizeI; i++) {
+        for (int j = 0; j < sizeJ; j++) {
+            mexPrintf("%s(%d,%d) = %g\n",name, i+1,j+1,A(i,j));
+        }
+    }
+}
+
+void printMyVec(vector_type &a,int sizeI, const char* name)
+{
+    for (int i = 0; i < sizeI; i++) {
+            mexPrintf("%s(%d) = %g\n",name, i+1,a(i));
+    }
+}
+
+void printMyNum(double num, const char* name)
+{
+     mexPrintf("%s = %g\n",name, num);
+}
+
+// void matrixMatrixProd(matrix_type &A,matrix_type &B,matrix_type &Z,int isize, int jsize, int ksize)
+// {
+//      for (int i=0; i<isize; i++)
+//      	for (int j=0; j<jsize; j++)
+//         	for(int k=0; i<ksize; k++)
+//                 	Z[i][k] += (A[i][j] * B[j][k]);
+// }
+//
+// void matrixVectorProd(matrix_type &A,matrix_type &B,matrix_type &Z,int isize, int jsize, int ksize)
+// {
+//      for (int i=0; i<isize; i++)
+//      	for (int j=0; j<jsize; j++)
+//         	for(int k=0; i<ksize; k++)
+//                 	Z[i][k] += (A[i][j] * B[j][k]);
+// }
+
+// void xtimesy(double x, double *y, double *z, size_t m, size_t n)
+// {
+//   mwSize i,j,count=0;
+//
+//   for (i=0; i<n; i++) {
+//     for (j=0; j<m; j++) {
+//       *(z+count) = x * *(y+count);
+//       count++;
+//     }
+//   }
+// }
+void array2vector(vector_type &vec, double* arry, int size)
+{
+    for(int i=0;i<size;i++)
+        vec(i) = arry[i];
+    
+}
+
+vector_type array2vector(double* arry, int size)
+{
+    vector_type vec(size);
+    for(int i=0;i<size;i++)
+        vec(i) = arry[i];
+    return vec;
+}
+
+void array2matrix(matrix_type &mat, double* arry, int sizeI, int sizeJ)
+{
+    for(int i=0;i<sizeI;i++)
+        for(int j=0;j<sizeJ;j++)
+            mat(i,j) = arry[i+j*sizeI];
+}
+
+
+// void array2matrix3(matrix_type &mat, double* arry, int sizeI, int sizeJ, int sizeK)
+// {
+//     //matrix_type mat1(1,1,1);
+//     //mat1(0,0,0) = 0;
+//     for(int i=0;i<sizeI;i++)
+//         for(int j=0;j<sizeJ;j++)
+//             for(int k=0;k<sizeK;k++)
+//                 mat(i,j,k) = arry[i+j*sizeI+k*sizeI*sizeJ];
+//
+// }
+
+void zeroVector(vector_type &vec)
+{
+    for(int i=0;i<vec.size();i++)
+        vec(i) = 0;
+}
+
+void zeroMatrix(matrix_type &mat, int sizeI, int sizeJ)
+{
+    for(int i=0;i<sizeI;i++)
+        for(int j=0;j<sizeJ;j++)
+            mat(i,j) =0;
+//     else
+//     {
+//         for(int i=0;i<sizeI;i++)
+//             for(int j=0;j<sizeJ;j++)
+//                 for(int k=0;k<sizeK;k++)
+//                     mat(i,j,k) = 0;
+//     }
+}
+
+void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
+    
+//[nlml, dnlml_dW, dnlml_dl, dnlml_ds, dnlml_dn] = gpr_pgr_1d_mex([lambda;signal_var;noise_var], t, y, V0, Phis, Qs, mu0, deriv0, derivs, wgt);
+    
+    //Inputs
+    if (nrhs != 10) {
+        mexErrMsgTxt("Incorrect number of arguments (should be 10). Quitting...");
+    }
+    
+    bool debug = false;
+    
+    // get the number of rows in V0
+    int D = mxGetM(prhs[3]);
+    int W = mxGetM(prhs[9]);
+    
+    
+    
+    double* theta = mxGetPr(prhs[0]);
+    double* x = mxGetPr(prhs[1]);
+    double* y = mxGetPr(prhs[2]);
+    matrix_type V0(D,D);
+    array2matrix(V0, mxGetPr(prhs[3]), D, D);
+    const mxArray* Phi_cell = prhs[4];
+    const mxArray* Q_cell = prhs[5];
+    double* mu0 = mxGetPr(prhs[6]);
+    const mxArray* deriv0 = prhs[7];
+    const mxArray* deriv_cell = prhs[8];
+    
+    vector_type mu0vec(D);
+    array2vector(mu0vec, mu0, D);
+    
+    //deriv0. structure
+    double *dVdSigvar = mxGetPr(mxGetFieldByNumber(deriv0, 0, 0));
+    matrix_type dVdSigvarMat(D,D);
+    array2matrix(dVdSigvarMat, dVdSigvar, D, D);
+    //printMyMat(dVdSigvarMat,D,D,"dVdSigvarMat");
+    
+    double *dVdlambda = mxGetPr(mxGetFieldByNumber(deriv0, 0, 1));
+    matrix_type dVdlambdaMat(D,D);
+    array2matrix(dVdlambdaMat, dVdlambda, D, D);
+    //printMyMat(dVdlambdaMat,D,D,"dVdlambdaMat");
+    
+    //deriv. structure
+    double *dPhidlambda,*dQdlambda,*dQdSigvar,*dPhidW,*dQdW;
+    
+    //size checks
+    if (mxGetM(prhs[0]) != 3 || (mxGetM(prhs[1]) != mxGetM(prhs[2]))) {
+        mexErrMsgTxt("Check input argument sizes! Quitting...");
+    }
+    if (!(mxGetN(prhs[0]) == 1 && mxGetN(prhs[1]) == 1 && mxGetN(prhs[2]) == 1)) {
+        mexErrMsgTxt("All vectors passed in must be column vectors! Quitting...");
+    }
+    //Outputs
+    if (nlhs != 5) {
+        mexErrMsgTxt("Invalid number of output arguments (should be 5). Quitting...");
+    }
+    int T = mxGetM(prhs[1]);
+    
+    plhs[0] = mxCreateDoubleMatrix(1, 1, mxREAL);
+    plhs[1] = mxCreateDoubleMatrix(W, 1, mxREAL);
+    plhs[2] = mxCreateDoubleMatrix(1, 1, mxREAL);  //need to check size!!
+    plhs[3] = mxCreateDoubleMatrix(1, 1, mxREAL);
+    plhs[4] = mxCreateDoubleMatrix(1, 1, mxREAL);
+    
+    double* nlml = mxGetPr(plhs[0]);
+    double* dnlml_dW = mxGetPr(plhs[1]);
+    double* dnlml_dl = mxGetPr(plhs[2]);
+    double* dnlml_ds = mxGetPr(plhs[3]);
+    double* dnlml_dn = mxGetPr(plhs[4]);
+    
+    //MAIN CODE
+    
+    double lambda = (theta[0]); //cov "decay" parameter
+    double signal_var = (theta[1]);
+    double noise_var = (theta[2]);
+    
+    
+    vector_type kalman_gain(D);
+    vector_type mu(D);
+    matrix_type V(D,D);
+    vector_type PhiMu(D);
+    matrix_type Phi(D,D);
+    matrix_type Q(D,D);
+    matrix_type Z(D,D);
+    matrix_type P(D,D);
+    
+    vector_type dmu_dl(D);
+    vector_type dmu_ds(D);
+    vector_type dmu_dn(D);
+    vector_type dg_dl(D);
+    vector_type dg_ds(D);
+    vector_type dg_dn(D);
+    
+    
+    //output variables
+    nlml[0] = 0;
+    for(int k=0;k<W;k++){
+       dnlml_dW[k] = 0;
+    }
+    dnlml_dl[0]  = 0;
+    dnlml_ds[0]  = 0;
+    dnlml_dn[0]  = 0;
+    
+    /* BEGIN KALMAN FILTERING */
+    //cout << "Forward filtering..." << endl;
+    //absorb first observation
+    int t = 0;
+    double pm = mu0[0];
+    double pv = V0(0,0) + noise_var;
+    // dpv_dl = deriv.dVdlambda(1,1);
+    double dpv_dl = dVdlambdaMat(0,0);
+    //dpv_ds = deriv.dVdSigvar(1,1);
+    double dpv_ds = dVdSigvarMat(0,0);
+    //dpv_dn = 1;
+    double dpv_dn = 1;
+    //nlml = 0.5*(log(2*pi) + log(pv) + ((y(1) - pm)^2)/pv);
+    nlml[0] += 0.5 * (log(2 * PI) + log(pv) + (pow((y[t] - pm), 2) / pv));
+    // dnlml_dpv = 0.5*(1/pv - ((y(1) - pm)^2)/(pv*pv));
+    double dnlml_dpv = 0.5*(1/pv - (pow((y[t] - pm), 2)/(pv*pv)));
+    dnlml_dl[0] += dnlml_dpv*dpv_dl;
+    dnlml_ds[0] += dnlml_dpv*dpv_ds;
+    dnlml_dn[0] += dnlml_dpv*dpv_dn;
+    //printMyNum(dnlml_dl[0],"dnlml_dl");
+    //printMyNum(dnlml_ds[0],"dnlml_ds");
+    //printMyNum(dnlml_dn[0],"dnlml_dn");
+    
+    vector_type H(D);
+    zeroVector(H);
+    H(0) = 1;
+    
+    // kalman_gain = (V0*H")/pv;
+    // dg_dl = (pv*(deriv.dVdlambda*H') - dpv_dl*(V0*H'))/(pv*pv);
+    // dg_ds = (pv*(deriv.dVdSigvar*H') - dpv_ds*(V0*H'))/(pv*pv);
+    // dg_dn = -(V0*H')/(pv*pv);
+    // mu = mu0 + kalman_gain*(y(1) - pm);
+    // dmu_dl = dg_dl*(y(1) - pm);
+    // dmu_ds = dg_ds*(y(1) - pm);
+    // dmu_dn = dg_dn*(y(1) - pm);
+    double kgd,dVld,dVsd;
+//     for (int d = 0; d < D; d++) {
+//         kgd = (V0(d,0)) / pv;
+//         dVld = (dVdlambda[d]);
+//         dVsd = (dVdSigvar[d]);
+//         
+//         kalman_gain[d] = kgd;
+//         dg_dl[d] = (pv*(dVld) - dpv_dl*(kgd)/pv);
+//         dg_ds[d] = (pv*(dVsd) - dpv_ds*(kgd)/pv);
+//         dg_dn[d] = -(kgd)/(pv);
+//         mu[d] = mu0[d]+kgd * (y[t] - pm);
+//         dmu_dl[d] = dg_dl[d]*(y[t] - pm);
+//         dmu_ds[d] = dg_ds[d]*(y[t] - pm);
+//         dmu_dn[d] = dg_dn[d]*(y[t] - pm);
+//     }
+    kalman_gain = prod(V0,H)/pv;
+    dg_dl = (pv*prod(dVdlambdaMat,H) - dpv_dl*prod(V0,H))/(pv*pv);
+    dg_ds = (pv*prod(dVdSigvarMat,H) - dpv_ds*prod(V0,H))/(pv*pv);
+    dg_dn = -prod(V0,H)/(pv*pv);
+    mu = mu0vec + kalman_gain*(y[0] - pm);
+    dmu_dl = dg_dl*(y[0] - pm);
+    dmu_ds = dg_ds*(y[0] - pm);
+    dmu_dn = dg_dn*(y[0] - pm);
+    
+    //printMyVec(kalman_gain,D,"kalman_gain");
+    //printMyVec(dg_dl,D,"dg_dl");
+    //printMyVec(dg_dn,D,"dg_dn");
+    //printMyVec(mu,D,"mu");
+    //printMyVec(dmu_dl,D,"dmu_dl");
+    //printMyVec(dmu_ds,D,"dmu_ds");
+    //printMyVec(dmu_dn,D,"dmu_dn");
+    
+    //dmu_dW = zeros(p,D);
+    matrix_type dmu_dW(D,W);
+    zeroMatrix(dmu_dW,D,W);
+    //printMyMat(dmu_dW,D,W,"dmu_dW");
+    
+    matrix_type kH = outer_prod(kalman_gain, H);
+    
+    //V = (eye(p) - kalman_gain*H)*V0;
+    V = V0 - prod(kH,V0);
+    //printMyMat(V,D,D,"V");
+    
+    
+    //dV_dl = deriv.dVdlambda - ((kalman_gain*H)*deriv.dVdlambda + (dg_dl*H)*V0);
+    matrix_type kHl = prod(kH,dVdlambdaMat);
+    matrix_type dgdlH = outer_prod(dg_dl, H);
+    matrix_type dgdlHV0 = prod(dgdlH,V0);
+    matrix_type dV_dl = dVdlambdaMat - (kHl + dgdlHV0);
+    //printMyMat(dV_dl,D,D,"dV_dl");
+    
+    //dV_ds = deriv.dVdSigvar - ((kalman_gain*H)*deriv.dVdSigvar + (dg_ds*H)*V0);
+    matrix_type kHs = prod(kH,dVdSigvarMat);
+    matrix_type dgdsH = outer_prod(dg_ds, H);
+    matrix_type dgdsHV0 = prod(dgdsH,V0);
+    matrix_type dV_ds = dVdSigvarMat - (kHs + dgdsHV0);
+    //printMyMat(dV_ds,D,D,"dV_ds");
+    
+    //dV_dn = - (dg_dn*H)*V0;
+    matrix_type dgdnH = outer_prod(dg_dn, H);
+    matrix_type dV_dn = - prod(dgdnH,V0);
+    //printMyMat(dV_dn,D,D,"dV_dn");
+    
+    //dV_dW = zeros(p,p,D); D=p, W=D
+    //matrix_type dV_dW(D,D,W);
+    //zeroMatrix(dV_dW,D,D,W);
+    
+    mat_vec_type dV_dW(W);
+    
+    
+    for(int i=0;i<W;i++){
+        matrix_type dV_dW_i(D, D);
+        zeroMatrix(dV_dW_i,D,D);
+        dV_dW(i) = dV_dW_i;
+//         char name[50];
+//         sprintf (name, "dV_dW_%d", i);
+        //printMyMat(dV_dW_i,D,D,name);
+    }
+    
+    //dP_dW = zeros(p,p,D);
+    mat_vec_type dP_dW(W);
+    
+    //zeroMatrix(dP_dW,D,D,W);
+    //dPhiMu_dW = zeros(p,D);
+    matrix_type dPhiMu_dW(D,W);
+    zeroMatrix(dPhiMu_dW,D,W);
+    
+    //dg_dW = zeros(p,D);
+    matrix_type dg_dW(D,W);
+    zeroMatrix(dg_dW,D,W);
+    
+    
+    //filter forward in "time"
+    
+//     vector_type Phi_v(D*D);
+//     vector_type Q_v(D*D);
+    matrix_type deriv_dPhidlambda(D,D);
+    matrix_type deriv_dQdlambda(D,D);
+    matrix_type deriv_dQdSigvar(D,D);
+    mat_vec_type deriv_dPhidW(W);
+    mat_vec_type deriv_dQdW(W);
+    
+//     for (t = 1; t < T; t++) {
+     for (t = 1; t < T; t++) {
+        
+        //memcpy(&Phi_v[0], mxGetPr(mxGetCell(Phi_cell, t-1)), sizeof(double)*D*D);
+        //array2matrix(Phi, Phi_v, D, D);
+        array2matrix(Phi, mxGetPr(mxGetCell(Phi_cell, t-1)), D, D);
+        //printMyMat(Phi,D,D,"Phi");
+        
+        
+        //memcpy(&Q_v[0], mxGetPr(mxGetCell(Q_cell, t-1)), sizeof(double)*D*D);
+        //array2matrix(Q, Q_v, D, D);
+        array2matrix(Q, mxGetPr(mxGetCell(Q_cell, t-1)), D, D);
+        //printMyMat(Q,D,D,"Q");
+        
+//         mxArray *pa = mxGetCell(Q_cell, t-1);
+//         mexPrintf("\t\t%s\t\t\n", mxGetClassName(pa));
+        ////////////// DERIV STRUCTURE
+        
+        //deriv_dPhidlambda(D,D) = deriv.dPhidlambda
+//         dPhidlambda = mxGetPr(mxGetFieldByNumber(deriv_cell, t-1, 0));
+//         dPhidlambda = mxGetPr(mxGetFieldByNumber(deriv_cell, t-1, 0));
+//         array2matrix(deriv_dPhidlambda, dPhidlambda, D, D);
+//         //printMyMat(deriv_dPhidlambda,D,D,"deriv_dPhidlambda");
+        
+        mxArray *derive_cell_i = mxGetCell(deriv_cell, t-1);
+        dPhidlambda = mxGetPr(mxGetFieldByNumber(derive_cell_i, 0, 0));
+        array2matrix(deriv_dPhidlambda, dPhidlambda, D, D);
+        //printMyMat(deriv_dPhidlambda,D,D,"deriv_dPhidlambda");
+        
+//         pa = mxGetFieldByNumber(derive_cell_i, 0, 0);
+//         mexPrintf("\t\t%s\t\t\n", mxGetClassName(pa));
+
+        //deriv_dQdlambda(D,D) = deriv.dQdlambda
+        dQdlambda = mxGetPr(mxGetFieldByNumber(derive_cell_i, 0, 1));
+        array2matrix(deriv_dQdlambda, dQdlambda, D, D);
+        //printMyMat(deriv_dQdlambda,D,D,"deriv_dQdlambda");
+
+        //deriv_dQdSigvar(D,D) = deriv.dQdSigvar
+        dQdSigvar = mxGetPr(mxGetFieldByNumber(derive_cell_i, 0, 2));
+        array2matrix(deriv_dQdSigvar, dQdSigvar, D, D);
+        //printMyMat(deriv_dQdSigvar,D,D,"deriv_dQdSigvar");
+        
+        for(int k=0;k<W;k++) {
+            //deriv_dPhidW(D,D,W) = deriv.dPhidW
+            dPhidW = mxGetPr(mxGetFieldByNumber(derive_cell_i, 0, 3))+k*D*D;
+            matrix_type dPhidWMat(D,D);
+            array2matrix(dPhidWMat, dPhidW, D, D);
+            deriv_dPhidW[k] = dPhidWMat;
+            
+//             char name[50];
+//             sprintf (name, "deriv_dPhidW_%d", k);
+            //printMyMat(deriv_dPhidW[k],D,D,name);
+            
+            //deriv_dQdW(D,D,W) = deriv.dQdW
+            dQdW = mxGetPr(mxGetFieldByNumber(derive_cell_i, 0, 4))+k*D*D;
+            matrix_type dQdWMat(D,D);
+            array2matrix(dQdWMat, dQdW, D, D);
+            deriv_dQdW[k] = dQdWMat;
+//             sprintf (name, "deriv_dQdW_%d", k);
+            //printMyMat(deriv_dQdW[k],D,D,name);
+        }
+        
+        
+        // P = Phi*V*Phi' + Q;
+        matrix_type tPhi = trans(Phi);
+        matrix_type VPhi = prod(V,tPhi);
+        P = prod(Phi,VPhi)+Q;
+        //printMyMat(P,D,D,"P");
+        
+        // dP_dl = Phi*V*deriv.dPhidlambda' + (Phi*dV_dl + deriv.dPhidlambda*V)*Phi' + deriv.dQdlambda;
+        matrix_type PhiV = prod(Phi,V);
+        matrix_type PhidVdl = prod(Phi,dV_dl);
+        matrix_type dPhilV = prod(deriv_dPhidlambda,V);
+        matrix_type dP_dl = prod(PhiV,trans(deriv_dPhidlambda))+prod(PhidVdl+dPhilV,tPhi)+deriv_dQdlambda;
+        //printMyMat(dP_dl,D,D,"dP_dl");
+        
+        // dP_ds = Phi*dV_ds*Phi' + deriv.dQdSigvar;
+        matrix_type PhidVds = prod(Phi,dV_ds);
+        matrix_type dP_ds = prod(PhidVds,tPhi)+deriv_dQdSigvar;
+        //printMyMat(dP_ds,D,D,"dP_ds");
+        //dP_dn = Phi*dV_dn*Phi';
+        matrix_type PhidVdn = prod(Phi,dV_dn);
+        matrix_type dP_dn = prod(PhidVdn,tPhi);
+        //printMyMat(dP_dn,D,D,"dP_dn");
+//     for d = 1:D
+//         dP_dW(:,:,d) = Phi*V*deriv.dPhidW(:,:,d)' + ...
+//             (Phi*dV_dW(:,:,d) + deriv.dPhidW(:,:,d)*V)*Phi' + deriv.dQdW(:,:,d);
+//     end
+        for(int k=0;k<W;k++){
+            matrix_type PhidVdW_k = prod(Phi,dV_dW[k]);
+            matrix_type dPhidWV_k = prod(deriv_dPhidW[k],V);
+            dP_dW[k] = prod(PhiV,trans(deriv_dPhidW[k]))+prod(PhidVdW_k+dPhidWV_k,tPhi)+deriv_dQdW[k];
+            
+//             char name[50];
+//             sprintf (name, "dP_dW_%d", k);
+            //printMyMat(dP_dW[k],D,D,name);
+        }
+        
+//     PhiMu = Phi*mu;
+        PhiMu = prod(Phi,mu);
+        //printMyVec(PhiMu,D,"PhiMu");
+//     dPhiMu_dl = deriv.dPhidlambda*mu + Phi*dmu_dl;
+        vector_type dPhiMu_dl = prod(deriv_dPhidlambda,mu) + prod(Phi,dmu_dl);
+        //printMyVec(dPhiMu_dl,D,"dPhiMu_dl");
+//     dPhiMu_ds = Phi*dmu_ds;
+        vector_type dPhiMu_ds = prod(Phi,dmu_ds);
+        //printMyVec(dPhiMu_ds,D,"dPhiMu_ds");
+//     dPhiMu_dn = Phi*dmu_dn;
+        vector_type dPhiMu_dn = prod(Phi,dmu_dn);
+        //printMyVec(dPhiMu_dn,D,"dPhiMu_dn");
+//     for d = 1:D
+//         dPhiMu_dW(:,d) = deriv.dPhidW(:,:,d)*mu + Phi*dmu_dW(:,d);
+//     end
+        for(int j=0;j<W;j++){
+            column(dPhiMu_dW, j) = prod(deriv_dPhidW[j],mu)+prod(Phi,column(dmu_dW, j));
+        }
+        //printMyMat(dPhiMu_dW,D,W,"dPhiMu_dW");
+        
+        pm = PhiMu(0);
+        double dpm_dl = dPhiMu_dl(0);
+        double dpm_ds = dPhiMu_ds(0);
+        double dpm_dn = dPhiMu_dn(0);
+//     dpm_dW = dPhiMu_dW(1,:)';
+        vector_type dpm_dW = row(dPhiMu_dW, 0);
+        //printMyVec(dpm_dW,W,"dpm_dW");
+        
+        pv = P(0,0) + noise_var;
+        double dpv_dl = dP_dl(0,0);
+        double dpv_ds = dP_ds(0,0);
+        double dpv_dn = dP_dn(0,0) + 1;
+//     dpv_dW = squeeze(dP_dW(1,1,:));
+        vector_type dpv_dW(W);
+        for(int k=0;k<W;k++)
+            dpv_dW(k) = dP_dW[k](0,0);
+        //printMyVec(dpv_dW,W,"dpv_dW");
+//
+//     nlml_i = 0.5*(log(2*pi) + log(pv) + ((y(i) - pm)^2)/pv);
+       nlml[0] += 0.5 * (log(2 * PI) + log(pv) + (pow((y[t] - pm), 2) / pv));
+       
+//     dnlml_dpv = 0.5*(1/pv - ((y(i) - pm)^2)/(pv*pv));
+       dnlml_dpv = 0.5*(1/pv - (pow((y[t] - pm), 2)/(pv*pv)));
+       
+//     dnlml_dpm = -0.5*(2*(y(i) - pm)/pv);
+       double dnlml_dpm = -0.5*(2*(y[t] - pm)/pv);
+       
+//     dnlml_dl = dnlml_dl + dnlml_dpv*dpv_dl + dnlml_dpm*dpm_dl;
+       dnlml_dl[0] += dnlml_dpv*dpv_dl+ dnlml_dpm*dpm_dl;
+//     dnlml_ds = dnlml_ds + dnlml_dpv*dpv_ds + dnlml_dpm*dpm_ds;
+       dnlml_ds[0] += dnlml_dpv*dpv_ds + dnlml_dpm*dpm_ds;
+//     dnlml_dn = dnlml_dn + dnlml_dpv*dpv_dn + dnlml_dpm*dpm_dn;
+       dnlml_dn[0] += dnlml_dpv*dpv_dn + dnlml_dpm*dpm_dn;
+//     dnlml_dW = dnlml_dW + dnlml_dpv*dpv_dW + dnlml_dpm*dpm_dW;
+       for(int k=0;k<W;k++) {
+           dnlml_dW[k] += dnlml_dpv*dpv_dW[k] + dnlml_dpm*dpm_dW[k];
+       }
+       
+       vector_type dnlml_dW_vec(D);
+       array2vector(dnlml_dW_vec,dnlml_dW,D);
+       //printMyVec(dnlml_dW_vec,W,"dnlml_dW");
+//     kalman_gain = (P*H')/pv;
+       vector_type PH = prod(P,H);
+       kalman_gain = PH/pv;
+//     dg_dl = (pv*(dP_dl*H') - dpv_dl*(P*H'))/(pv*pv);
+       dg_dl = (pv*prod(dP_dl,H) - dpv_dl*PH)/(pv*pv);
+       
+//     dg_ds = (pv*(dP_ds*H') - dpv_ds*(P*H'))/(pv*pv);
+       dg_ds = (pv*prod(dP_ds,H) - dpv_ds*PH)/(pv*pv);
+       
+//     dg_dn = (pv*(dP_dn*H') - dpv_dn*(P*H'))/(pv*pv);
+       dg_dn = (pv*prod(dP_dn,H) - dpv_dn*PH)/(pv*pv);
+//     for d = 1:D
+//         dg_dW(:,d) = (pv*(dP_dW(:,:,d)*H') - dpv_dW(d)*(P*H'))/(pv*pv);
+//     end
+       for(int k=0;k<W;k++)
+           column(dg_dW, k) = (pv*prod(dP_dW[k],H) - dpv_dW(k)*PH)/(pv*pv);
+       
+//
+       mu = PhiMu + kalman_gain*(y[t] - pm);
+       dmu_dl = dPhiMu_dl + dg_dl*(y[t] - pm) - kalman_gain*dpm_dl;
+       dmu_ds = dPhiMu_ds + dg_ds*(y[t] - pm) - kalman_gain*dpm_ds;
+       dmu_dn = dPhiMu_dn + dg_dn*(y[t] - pm) - kalman_gain*dpm_dn;
+//     for d = 1:D
+//         dmu_dW(:,d) = dPhiMu_dW(:,d) + dg_dW(:,d)*(y(i) - pm) - kalman_gain*dpm_dW(d);
+//     end
+       for(int k=0;k<W;k++) {
+           column(dmu_dW, k) = column(dPhiMu_dW,k) + column(dg_dW,k)*(y[t] - pm) - kalman_gain*dpm_dW(k);
+       }
+       //printMyMat(dmu_dW,D,W,"dmu_dW");
+//
+//     V = (eye(p) - kalman_gain*H)*P;
+       matrix_type kalH = outer_prod(kalman_gain,H);
+       V = P - prod(kalH,P);
+       //printMyMat(V,D,D,"V");
+//     dV_dl = dP_dl - ((kalman_gain*H)*dP_dl + (dg_dl*H)*P);
+       matrix_type dgdlH = outer_prod(dg_dl,H);
+       dV_dl = dP_dl - (prod(kalH,dP_dl) + prod(dgdlH,P));
+       //printMyMat(dV_dl,D,D,"dV_dl");
+//     dV_ds = dP_ds - ((kalman_gain*H)*dP_ds + (dg_ds*H)*P);
+       matrix_type dgdsH = outer_prod(dg_ds,H);
+       dV_ds = dP_ds - (prod(kalH,dP_ds) + prod(dgdsH,P));
+       //printMyMat(dV_ds,D,D,"dV_ds");
+//     dV_dn = dP_dn - ((kalman_gain*H)*dP_dn + (dg_dn*H)*P);
+       matrix_type dgdnH = outer_prod(dg_dn,H);
+       dV_dn = dP_dn - (prod(kalH,dP_dn) + prod(dgdnH,P));
+       //printMyMat(dV_dn,D,D,"dV_dn");
+//     for d = 1:D
+//         dV_dW(:,:,d) = dP_dW(:,:,d) - ((kalman_gain*H)*dP_dW(:,:,d) + (dg_dW(:,d)*H)*P);
+//     end
+       for(int k=0;k<W;k++) {
+           vector_type dgdW = column(dg_dW,k);
+           matrix_type dgdWH = outer_prod(dgdW,H);
+           dV_dW[k] = dP_dW[k] - (prod(kalH,dP_dW[k]) + prod(dgdWH,P));
+           
+//            char name[50];
+//            sprintf (name, "dV_dW_%d", k);
+           //printMyMat(dV_dW[k],D,D,name);
+       }
+       
+//
+    }
+    
+}

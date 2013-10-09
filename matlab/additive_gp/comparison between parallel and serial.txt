@@ -1,0 +1,40 @@
+
+RESULTS Parallel 8cores server
+************************************************************
+Algorithm     	 NMSE          	 MNLP     EXEC_TIME 
+ADDITIVE-MCMC 	 0.37323 	 2.63853 	  444 
+ADDITIVE-VB   	 0.37688 	 2.64373 	  169 
+PPR-MCMC      	 0.04916 	 1.62525 	  174 
+PP-GPR        	 0.05987 	 1.67645 	  52 
+************************************************************
+
+RESULTS Serial 8cores server
+************************************************************
+Algorithm     	 NMSE          	 MNLP     EXEC_TIME 
+ADDITIVE-MCMC 	 0.37323 	 2.63853 	  ? 
+ADDITIVE-VB   	 0.37688 	 2.64373 	  ? 
+PPR-MCMC      	 0.04916 	 1.62525 	  ? 
+PP-GPR        	 0.05987 	 1.67645 	  164 
+************************************************************
+
+RESULTS Parallel Elad Desktop
+************************************************************
+Algorithm     	 NMSE          	 MNLP     EXEC_TIME 
+ADDITIVE-MCMC 	 0.37323 	 2.63853 	  943.2 
+ADDITIVE-VB   	 0.37688 	 2.64373 	  279.7 
+PPR-MCMC      	 0.04916 	 1.62525 	  258.4 
+PP-GPR        	 0.05987 	 1.67645 	  135.6 
+************************************************************
+
+RESULTS Serial Elad Desktop
+************************************************************
+Algorithm     	 NMSE          	 MNLP     EXEC_TIME 
+ADDITIVE-MCMC 	 0.37410 	 2.63955 	 1216.1 
+ADDITIVE-VB   	 0.37688 	 2.64373 	  636.9 
+PPR-MCMC      	 0.11070 	 2.03088 	  363.8 
+PP-GPR        	 0.05987 	 1.67649 	  195.2 
+************************************************************
+
+arrayfun - Elapsed time is 1.808384 seconds.
+for over feval - Elapsed time is 1.887268 seconds.
+parfor over feval - Elapsed time is 1.059798 seconds

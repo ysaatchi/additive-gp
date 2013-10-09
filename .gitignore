@@ -1,0 +1,11 @@
+# Apple
+.DS_STORE
+
+# EMACS temp files
+*~
+[#]*[#]
+.\#*
+
+# MATLAB and MEX 
+*.mex*
+*.asv
