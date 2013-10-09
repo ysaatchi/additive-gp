@@ -5,15 +5,11 @@ A framework for fast multidimensional GP analysis through additive modeling and 
 
 To read about some preliminary experiments using this code, see:
 
-*Structure Discovery in Nonparametric Regression through Compositional Kernel Search*
 by Gilboa, Elad, Yunus Saatçi, and John P. Cunningham. "Scaling Multidimensional Inference for 
 Structured Gaussian Processes." to appear TPAMI (2013).
 
-
 Feel free to email with any questions:
 [Elad Gilboa] (gilboae@ese.wustl.edu)
-
-
 
 ### Instructions:
 
